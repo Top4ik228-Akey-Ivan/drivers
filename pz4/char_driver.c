@@ -93,25 +93,27 @@ static const struct file_operations drv_fops = {
 	.unlocked_ioctl = drv_ioctl,
 };
 
-static int __init drv_init(void)
+static int __init drv_init(void) // Вызывается при insmod
 {
 	int ret;
 
-	ret = alloc_chrdev_region(&dev_num, 0, 1, DRV_NAME);
+	ret = alloc_chrdev_region(&dev_num, 0, 1, DRV_NAME); // 📌 Ядро выдаёт: major/minor
 	if (ret)
 		return ret;
 
+	// Регистрируем символьное устройство
 	cdev_init(&drv_cdev, &drv_fops);
 	ret = cdev_add(&drv_cdev, dev_num, 1);
+
 	if (ret)
 		goto err_region;
 
+	// Создание класса и устройства В /dev появляется: /dev/char_driver
 	drv_class = class_create(DRV_NAME);
 	if (IS_ERR(drv_class)) {
 		ret = PTR_ERR(drv_class);
 		goto err_cdev;
 	}
-
 	drv_device = device_create(drv_class, NULL, dev_num, NULL, DRV_NAME);
 	if (IS_ERR(drv_device)) {
 		ret = PTR_ERR(drv_device);
@@ -122,6 +124,7 @@ static int __init drv_init(void)
 	        MAJOR(dev_num), MINOR(dev_num));
 	return 0;
 
+// обработка ошибико при инициализации драйвера
 err_class:
 	class_destroy(drv_class);
 err_cdev:
@@ -131,15 +134,16 @@ err_region:
 	return ret;
 }
 
-static void __exit drv_exit(void)
+static void __exit drv_exit(void) // Вызывается при rmmod
 {
+	// Полная очистка ресурсов
 	device_destroy(drv_class, dev_num);
 	class_destroy(drv_class);
 	cdev_del(&drv_cdev);
 	unregister_chrdev_region(dev_num, 1);
 	pr_info(DRV_NAME ": unloaded\n");
 }
-
+//Точки входа и выхода
 module_init(drv_init);
 module_exit(drv_exit);
 
