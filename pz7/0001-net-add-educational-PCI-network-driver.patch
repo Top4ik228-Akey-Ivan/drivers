@@ -1,0 +1,209 @@
+From 9dab8def9ebf5cddb773fe82068deff56a5f406d Mon Sep 17 00:00:00 2001
+From: ivan <ivanorekhov04022005@gmail.com>
+Date: Thu, 18 Dec 2025 15:59:51 +0000
+Subject: [PATCH] net: add educational PCI network driver
+
+---
+ drivers/net/ethernet/Kconfig                  |   2 +-
+ drivers/net/ethernet/Makefile                 |   1 +
+ drivers/net/ethernet/pci_net_lab/Kconfig      |   7 +
+ drivers/net/ethernet/pci_net_lab/Makefile     |   1 +
+ .../net/ethernet/pci_net_lab/pci_net_lab.c    | 145 ++++++++++++++++++
+ 5 files changed, 155 insertions(+), 1 deletion(-)
+ create mode 100644 drivers/net/ethernet/pci_net_lab/Kconfig
+ create mode 100644 drivers/net/ethernet/pci_net_lab/Makefile
+ create mode 100644 drivers/net/ethernet/pci_net_lab/pci_net_lab.c
+
+diff --git a/drivers/net/ethernet/Kconfig b/drivers/net/ethernet/Kconfig
+index 5a274b99f299..08bc67f0ad79 100644
+--- a/drivers/net/ethernet/Kconfig
++++ b/drivers/net/ethernet/Kconfig
+@@ -192,5 +192,5 @@ source "drivers/net/ethernet/wangxun/Kconfig"
+ source "drivers/net/ethernet/wiznet/Kconfig"
+ source "drivers/net/ethernet/xilinx/Kconfig"
+ source "drivers/net/ethernet/xircom/Kconfig"
+-
++source "drivers/net/ethernet/pci_net_lab/Kconfig"
+ endif # ETHERNET
+diff --git a/drivers/net/ethernet/Makefile b/drivers/net/ethernet/Makefile
+index 0d872d4efcd1..62edc491d3d5 100644
+--- a/drivers/net/ethernet/Makefile
++++ b/drivers/net/ethernet/Makefile
+@@ -104,3 +104,4 @@ obj-$(CONFIG_NET_VENDOR_XILINX) += xilinx/
+ obj-$(CONFIG_NET_VENDOR_XIRCOM) += xircom/
+ obj-$(CONFIG_NET_VENDOR_SYNOPSYS) += synopsys/
+ obj-$(CONFIG_NET_VENDOR_PENSANDO) += pensando/
++obj-$(CONFIG_PCI_NET_LAB) += pci_net_lab/
+diff --git a/drivers/net/ethernet/pci_net_lab/Kconfig b/drivers/net/ethernet/pci_net_lab/Kconfig
+new file mode 100644
+index 000000000000..85ea33eabe64
+--- /dev/null
++++ b/drivers/net/ethernet/pci_net_lab/Kconfig
+@@ -0,0 +1,7 @@
++config PCI_NET_LAB
++    tristate "Educational PCI network driver"
++    depends on PCI && NETDEVICES
++    help
++      Educational PCI-based Ethernet driver.
++      Demonstrates PCI probe/remove and
++      MAC address initialization.
+diff --git a/drivers/net/ethernet/pci_net_lab/Makefile b/drivers/net/ethernet/pci_net_lab/Makefile
+new file mode 100644
+index 000000000000..709166130344
+--- /dev/null
++++ b/drivers/net/ethernet/pci_net_lab/Makefile
+@@ -0,0 +1 @@
++obj-$(CONFIG_PCI_NET_LAB) += pci_net_lab.o
+diff --git a/drivers/net/ethernet/pci_net_lab/pci_net_lab.c b/drivers/net/ethernet/pci_net_lab/pci_net_lab.c
+new file mode 100644
+index 000000000000..9c5979a4602a
+--- /dev/null
++++ b/drivers/net/ethernet/pci_net_lab/pci_net_lab.c
+@@ -0,0 +1,145 @@
++#include <linux/module.h>
++#include <linux/pci.h>
++#include <linux/netdevice.h>
++#include <linux/etherdevice.h>
++#include <linux/io.h>
++
++#define DRV_NAME "pci_net_lab"
++
++/* Intel 82540EM */
++#define PCI_VENDOR_ID_LAB 0x8086
++#define PCI_DEVICE_ID_LAB 0x100e
++
++struct lab_priv {
++    void __iomem *mmio;
++    struct net_device *netdev;
++};
++
++/* ---------------- net_device ops ---------------- */
++
++static int lab_open(struct net_device *dev)
++{
++    netif_start_queue(dev);
++    return 0;
++}
++
++static int lab_stop(struct net_device *dev)
++{
++    netif_stop_queue(dev);
++    return 0;
++}
++
++static const struct net_device_ops lab_netdev_ops = {
++    .ndo_open = lab_open,
++    .ndo_stop = lab_stop,
++};
++
++/* ---------------- PCI PROBE ---------------- */
++
++static int lab_pci_probe(struct pci_dev *pdev,
++                         const struct pci_device_id *id)
++{
++    struct net_device *netdev;
++    struct lab_priv *priv;
++    int err;
++    u8 mac[ETH_ALEN];
++
++    pr_info(DRV_NAME ": probe called for %04x:%04x\n",
++            pdev->vendor, pdev->device);
++
++    err = pci_enable_device(pdev);
++    if (err)
++        return err;
++
++    err = pci_request_regions(pdev, DRV_NAME);
++    if (err)
++        goto err_disable;
++
++    netdev = alloc_etherdev(sizeof(struct lab_priv));
++    if (!netdev) {
++        err = -ENOMEM;
++        goto err_regions;
++    }
++
++    priv = netdev_priv(netdev);
++    priv->netdev = netdev;
++
++    pci_set_drvdata(pdev, priv);
++
++    priv->mmio = pci_iomap(pdev, 0, 0);
++    if (!priv->mmio) {
++        err = -EIO;
++        goto err_free;
++    }
++
++    /*
++     * Intel e1000:
++     * MAC address stored in registers RAL/RAH
++     * RAL = 0x5400
++     */
++    mac[0] = ioread8(priv->mmio + 0x5400);
++    mac[1] = ioread8(priv->mmio + 0x5401);
++    mac[2] = ioread8(priv->mmio + 0x5402);
++    mac[3] = ioread8(priv->mmio + 0x5403);
++    mac[4] = ioread8(priv->mmio + 0x5404);
++    mac[5] = ioread8(priv->mmio + 0x5405);
++
++    eth_hw_addr_set(netdev, mac);
++
++    netdev->netdev_ops = &lab_netdev_ops;
++
++    err = register_netdev(netdev);
++    if (err)
++        goto err_iounmap;
++
++    pr_info(DRV_NAME ": netdev %s registered\n", netdev->name);
++    pr_info(DRV_NAME ": REAL MAC address %pM\n", netdev->dev_addr);
++
++    return 0;
++
++err_iounmap:
++    pci_iounmap(pdev, priv->mmio);
++err_free:
++    free_netdev(netdev);
++err_regions:
++    pci_release_regions(pdev);
++err_disable:
++    pci_disable_device(pdev);
++    return err;
++}
++
++/* ---------------- PCI REMOVE ---------------- */
++
++static void lab_pci_remove(struct pci_dev *pdev)
++{
++    struct lab_priv *priv = pci_get_drvdata(pdev);
++
++    pr_info(DRV_NAME ": remove called\n");
++
++    unregister_netdev(priv->netdev);
++    pci_iounmap(pdev, priv->mmio);
++    free_netdev(priv->netdev);
++    pci_release_regions(pdev);
++    pci_disable_device(pdev);
++}
++
++/* ---------------- PCI ID TABLE ---------------- */
++
++static const struct pci_device_id lab_pci_ids[] = {
++    { PCI_DEVICE(PCI_VENDOR_ID_LAB, PCI_DEVICE_ID_LAB) },
++    { 0 }
++};
++MODULE_DEVICE_TABLE(pci, lab_pci_ids);
++
++static struct pci_driver lab_pci_driver = {
++    .name = DRV_NAME,
++    .id_table = lab_pci_ids,
++    .probe = lab_pci_probe,
++    .remove = lab_pci_remove,
++};
++
++module_pci_driver(lab_pci_driver);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Lab work");
++MODULE_DESCRIPTION("Educational PCI network driver");
+--
+2.43.0
