@@ -13,20 +13,28 @@
 #define CLS_NAME  "mai_lab1_class"
 #define HISTO_MAX 500
 
-// Буфер устройства и гистограмма
+// буфкр - одно число
 static int dev_buffer = 0;
 static bool buf_is_empty = true;
 
+// текущее количество валидных элементов
 static size_t histo_len = 0;
+// массив гистограммы
 static size_t histo_buf[HISTO_MAX];
 
+// время послденей записи
 static ulong last_write_time = 0;
+// накопленное время между чтениями
 static ulong time_accum = 0;
 
 // Структуры драйвера
-static dev_t dev_no;
+// major/minor номер
+static dev_t dev_no; 
+// ядровое описание устройства
 static struct cdev dev_cdev;
+// класс в sysfs
 static struct class *dev_class;
+// конкретное устройство /dev/
 static struct device *dev_device;
 
 // Прототипы
@@ -37,21 +45,25 @@ static ssize_t dev_write(struct file *, const char __user *, size_t, loff_t *);
 static long dev_ioctl(struct file *, unsigned int, unsigned long);
 
 // Операции устройства
+// Это обработчики системных вызовов:
 static const struct file_operations fops = {
     .open = dev_open,
     .release = dev_release,
     .read = dev_read,
     .write = dev_write,
+    // современный вариант ioctl без глобальной блокировки BKL.
     .unlocked_ioctl = dev_ioctl,
     .owner = THIS_MODULE,
 };
 
+// Вызывается при open("/dev/mai_lab1_dev")
 static int dev_open(struct inode *inode, struct file *file)
 {
     pr_info(DRV_NAME ": device opened\n");
     return 0;
 }
 
+// Вызывается при close("/dev/mai_lab1_dev")
 static int dev_release(struct inode *inode, struct file *file)
 {
     pr_info(DRV_NAME ": device closed\n");
@@ -62,26 +74,32 @@ static int dev_release(struct inode *inode, struct file *file)
 static ssize_t dev_read(struct file *flip, char __user *user_buf,
                         size_t count, loff_t *offset)
 {
+    // int = 4 байта / sizeof возвращает размер в БАЙТАХ
     if (count != sizeof(dev_buffer))
         return -EINVAL;
 
     if (buf_is_empty)
         return 0;
 
+    // копируем данные в user-space
     if (copy_to_user(user_buf, &dev_buffer, sizeof(dev_buffer)))
         return -EFAULT;
 
     // Обновляем гистограмму
+    // Увеличиваем счётчик текущего интервала
     histo_buf[histo_len]++;
 
+    // Считаем время с последней записи
     ulong delta = jiffies - last_write_time;
     time_accum += delta;
 
+    // Если накопилось ≥ 50 мкс: переходим к следующему элементу гистограммы
     if (jiffies_to_usecs(time_accum) >= 50) {
         time_accum = 0;
         histo_len++;
     }
 
+    // размер в байтах
     return sizeof(dev_buffer);
 }
 
@@ -92,6 +110,7 @@ static ssize_t dev_write(struct file *flip, const char __user *user_buf,
     if (count != sizeof(dev_buffer))
         return -EINVAL;
 
+    // Копируем данные из user space
     if (copy_from_user(&dev_buffer, user_buf, count))
         return -EFAULT;
 
@@ -106,11 +125,13 @@ static long dev_ioctl(struct file *flip, unsigned int cmd, unsigned long arg)
 {
     switch (cmd) {
 
+    // Возвращает histo_len пользователю
     case IOCTL_HISTO_LEN:
         if (copy_to_user((size_t *)arg, &histo_len, sizeof(histo_len)))
             return -EFAULT;
         break;
 
+    // Копирует весь массив гистограммы
     case IOCTL_HISTO_BUF:
         if (copy_to_user((size_t *)arg, histo_buf,
                          histo_len * sizeof(size_t)))
