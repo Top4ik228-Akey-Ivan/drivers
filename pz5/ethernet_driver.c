@@ -39,6 +39,7 @@ static netdev_tx_t drv_send(struct sk_buff *skb, struct net_device *ndev)
     // Проходим по каждому байту пакета => Печатаем его в шестнадцатеричном виде
     for (i = 0; i < skb->len; i++)
     // %02x - формат вывода 2-кол-во знаков x - 16сс
+    // делает лог без переноса строки
         pr_cont("%02x ", skb->data[i]);
     pr_cont("\n");
 
@@ -95,7 +96,7 @@ static void __exit drv_exit(void)
 {
     // Убираем интерфейс из системы
     unregister_netdev(vnet);
-    // Освобождаем память
+    // освобождает всю память, которую выделили для сетевого интерфейса.
     free_netdev(vnet);
     pr_info(MODNAME ": driver unloaded\n");
 }
@@ -106,5 +107,5 @@ module_init(drv_init);
 module_exit(drv_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Rewritten");
+MODULE_AUTHOR("Ivan");
 MODULE_DESCRIPTION("Unique version of raw Ethernet demo driver");

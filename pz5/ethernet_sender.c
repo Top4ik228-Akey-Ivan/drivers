@@ -12,16 +12,17 @@
 // Структура Ethernet-кадра
 struct eth_frame {
     struct ethhdr hdr;
+    // максимальный размер полезной нагрузки Ethernet-кадра (payload)
     unsigned char payload[ETH_DATA_LEN];
 };  
 
 int main() {
     // Имя интерфейса, через который отправляем кадр
     const char *iface = "eth0";
-    // MAC назначения
+    // MAC назначения eth_alen длина Ethernet-адреса (MAC-адреса) в байтах
     const unsigned char target_mac[ETH_ALEN] = {0,0,0,0,0,0};
     const char *msg = "hello world";
-    // Дескриптор сокета
+    // Дескриптор сокета это обычное целое число (int), которое указывает на сокет внутри ядра Linux.
     int sockfd;
 
     // Создание RAW socket
@@ -34,7 +35,7 @@ int main() {
         perror("socket");
         return 1;
     }
-    // Универсальная структура для ioctl
+    // Это универсальная структура ioctl для передачи данных между user-space -> ядром
     struct ifreq ifr;
     // Команда заполняет область памяти одинаковым байтом То есть: обнуляем всю структуру / Предотвращаем мусор
     memset(&ifr, 0, sizeof(ifr));
