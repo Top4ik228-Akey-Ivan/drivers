@@ -21,6 +21,7 @@ struct lab_priv {
 /* ---------------- net_device ops ---------------- */
 
 // Включение интерфейса
+// ip link set eth0 up / .ndo_open = lab_open,
 static int lab_open(struct net_device *dev)
 {
     // ip link set eth0 up => netif_start_queue(dev) => «можно принимать пакеты»
@@ -28,6 +29,7 @@ static int lab_open(struct net_device *dev)
     return 0;
 }
 
+// ip link set eth0 down / .ndo_stop = lab_stop
 static int lab_stop(struct net_device *dev)
 {
     // прекратить передачу пактов / не пополнять очередь
@@ -144,6 +146,7 @@ err_disable:
 static void lab_pci_remove(struct pci_dev *pdev)
 {
     // Получение приватных данных драйвера
+    // например адрес MMIO области устройства
     struct lab_priv *priv = pci_get_drvdata(pdev);
 
     pr_info(DRV_NAME ": remove called\n");
@@ -174,7 +177,9 @@ MODULE_DEVICE_TABLE(pci, lab_pci_ids);
 static struct pci_driver lab_pci_driver = {
     .name = DRV_NAME,
     .id_table = lab_pci_ids,
+    // при подключении pci устройства
     .probe = lab_pci_probe,
+    // при физическом извлечении PCI устройсвта / при выгрузке ядра
     .remove = lab_pci_remove,
 };
 

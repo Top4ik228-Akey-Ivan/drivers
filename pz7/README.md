@@ -40,7 +40,7 @@ source "drivers/net/ethernet/pci_net_lab/Kconfig"
 sudo apt install flex bison libncurses-dev
 
 # Запускаем меню конфигурации
-make menuconfig
+make menuconfig (Device drivers -> Network device support -> Ethernet -> Ethernet driver support)
 ```
 
 ![menuconfig](./assets/menuconfig.png)
